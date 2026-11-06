@@ -1,38 +1,44 @@
-# WorkBuddy 自动签到 · 社区分享工具
+# WorkBuddy 自动签到 · 社区分享工具（OpenWrt 软路由版）
 
-把 WorkBuddy 的「每日签到 / 派猫猫旅行」变成全自动：装好一次，电脑、云函数或 OpenWrt 软路由每天定时帮你完成，积分稳稳到账。
+把 WorkBuddy 的「每日签到 / 派猫猫旅行」变成全自动：部署到家里的 OpenWrt 软路由，
+7×24 定时执行，电脑关机也不影响，积分稳稳到账。
 
 > ⚠️ **这是社区个人分享，非 WorkBuddy 官方出品。** 自动签到的能力来自 WorkBuddy 自身功能，本工具仅做自动化封装。
 
 ---
 
-## 两种版本，按需下载
+## 下载
 
 | 版本 | 适合 | 下载 |
 | --- | --- | --- |
-| **电脑 / 云函数版** | Windows / macOS / Linux，或纯手机用户（用腾讯云 SCF 托管） | [workbuddy-auto-checkin.zip](https://raw.githubusercontent.com/ErikSLJ/workbuddy-auto-checkin/main/workbuddy-auto-checkin.zip) |
-| **OpenWrt 软路由版** | 已有 OpenWrt 软路由，想 7×24 挂机 | [workbuddy-checkin-openwrt.zip](https://raw.githubusercontent.com/ErikSLJ/workbuddy-auto-checkin/main/workbuddy-checkin-openwrt.zip) |
+| **OpenWrt 软路由版** | 已有 OpenWrt 软路由，想 7×24 挂机 | [workbuddy-checkin-openwrt.zip](workbuddy-checkin-openwrt.zip) |
 
-两个压缩包也都在本仓库根目录，可直接 Clone 后使用。
+也可直接 Clone 本仓库，压缩包就在根目录。
+
+> 本仓库**只提供软路由版**，不含电脑本机定时任务，也不含云函数方案。
 
 ---
 
 ## 怎么用
 
-### 电脑 / 云函数版（WorkBuddy 技能）
+1. 下载 `workbuddy-checkin-openwrt.zip` 并解压；
+2. 按压缩包内的图文教程，把签到脚本传到软路由并写好定时任务；
+3. 用只读检查确认通道打通，之后每天自动签到 + 派猫猫旅行。
 
-1. 下载 `workbuddy-auto-checkin.zip` 并解压。
-2. 把解压出来的 `skill/` 整个目录，放进 WorkBuddy 的技能目录（或在 WorkBuddy 里加载本地技能）。
-3. 在 WorkBuddy 对话里说一句「帮我自动签到」，它会自动导出你的登录态、建立每天 9 点的定时任务。
-4. 之后每天自动签到 + 派猫猫旅行，令牌 60 天自动续期，基本不用管。
+部署脚本默认给两个账号分别设置 **07:30** 与 **07:40**（各自 `HOME` 隔离、各自令牌），
+两个账号都跑完后由汇总脚本**合并成一条**微信推送，每个账号独立一行。
+时间与账号数量都可按需调整。
 
-纯手机用户：技能包内附「云函数」模板，部署到腾讯云 SCF 即可（平台定时器每天触发，手机只管一次部署）。
+---
 
-### OpenWrt 软路由版
+## 本次更新（详见 CHANGELOG.md）
 
-1. 下载 `workbuddy-checkin-openwrt.zip` 并解压。
-2. 按压缩包内的图文教程，把签到脚本传到软路由并设为开机自启。
-3. 教程已适配新 / 老固件，会自动识别该用哪把 SSH 密钥。
+- 修复「已签到」误判：不再把服务端 5xx 报错误判成已签，避免假成功推送；
+- 签到失败自动重试 4 次（递增退避 2 / 5 / 10 / 20 秒），重试期间不推送，
+  4 次仍失败才推送失败提醒；
+- 新增多账号结果合并推送，排版改为每个账号独立一行；
+- 账号显示名改为本地私有配置，公开脚本与分享包**不含任何账号显示名**；
+- 精简为纯 OpenWrt 软路由版，移除电脑定时任务与云函数相关内容。
 
 ---
 
@@ -45,8 +51,10 @@
 
 ## 安全说明（透明）
 
-- 工具包里**没有任何作者的私密信息**：不含我的令牌、密钥、路由器 IP。
-- 签到用的是**你自己的 WorkBuddy 账号**：工具只在你本机 / 你自己的云函数里导出并保存你的登录态，全程不离开你的设备；朋友各自导出自己的，互不干扰。
+- 工具包里**没有任何使用者的私密信息**：不含令牌、密钥、路由器 IP 或账号显示名；
+  `notify_config.json` 中的推送 key 为占位符，需自行替换。
+- 签到用的是**你自己的 WorkBuddy 账号**：令牌只保存在你自己的路由器（权限 600），
+  全程不离开你的设备；每位使用者各自导出自己的令牌。
 - 令牌为离线长效令牌，60 天滑动续期，过期后工具会自动提示重新导出一次。
 
 ---
@@ -54,7 +62,7 @@
 ## 收益相关（可选）
 
 - **邀请有奖：** 通过落地页顶部「先注册 WorkBuddy」按钮注册，邀请人可获得官方奖励，你本人也得 2000 积分——双赢。
-- **方糖推送（可选）：** 想让签到失败时用微信通知你，可自备 [方糖 Server酱](https://sct.ftqq.com/r/28382) 推送 key（走此返佣链接注册，邀请人也有返佣）。不填也能正常签到，只是没有微信提醒。
+- **方糖推送（可选）：** 想用微信接收签到结果，可自备 [方糖 Server酱](https://sct.ftqq.com/r/28382) 推送 key（走此返佣链接注册，邀请人也有返佣）。不填也能正常签到，只是没有微信提醒。
 
 ---
 
@@ -63,14 +71,12 @@
 ```
 workbuddy-auto-checkin/
 ├── README.md                      本文件
-├── workbuddy-auto-checkin.zip     电脑 / 云函数版（技能包）
-├── workbuddy-checkin-openwrt.zip  OpenWrt 软路由版
-└── skill/                        WorkBuddy 技能源码
+├── CHANGELOG.md                   版本修改记录
+├── workbuddy-checkin-openwrt.zip  OpenWrt 软路由版（部署包）
+└── skill/                        签到脚本源码
     ├── SKILL.md
     ├── README.md
-    ├── scripts/                   签到 / 认证 / 定时任务等脚本
-    ├── assets/cloud_function/     云函数模板
-    └── references/                参考资料
+    └── scripts/                   签到 / 认证 / 推送 / 汇总脚本
 ```
 
 ---

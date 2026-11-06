@@ -121,7 +121,9 @@ def _auth_candidates():
 STATUS_PATH = "/billing/meter/checkin-activity-status"
 CHECKIN_PATH = "/billing/meter/daily-checkin"
 HTTP_TIMEOUT = 10
-MAX_RETRY = 1
+MAX_RETRY = 4  # 最多重试 4 次（共 5 次尝试）；结合下方 _BACKOFF 递增退避
+# 重试退避间隔（秒）：首次 2 秒，之后逐步拉长，避免网络抖动时连续快速重试全军覆没
+_BACKOFF = (2, 5, 10, 20, 30)
 VERSION = "3.1.7"
 
 # 推送渠道覆盖（由命令行 --push-channels 设定，None=用配置里全部已就绪渠道）
@@ -1250,6 +1252,18 @@ def _win_toast(title, body):
 
 # ---------------- 主流程 ----------------
 
+def _signed_text(body):
+    """判断响应是否表示「今日已签到 / 已领取」。
+
+    仅依据消息文案判断，用来把「真实已签」与「瞬时报错」（如 code 10001 +
+    msg「签到失败」+ HTTP 500）区分开，避免误判为已签。
+    """
+    if not isinstance(body, dict):
+        return False
+    m = body.get("msg") or body.get("message") or ""
+    return ("已签到" in m) or ("今天已签到" in m) or ("已领取" in m)
+
+
 def _do_checkin(base, token, check_only):
     """执行签到主流程（查询状态 → 必要时领取）。返回结构化结果片段。"""
     result = {"status": "unknown", "action": None, "points": None,
@@ -1274,7 +1288,8 @@ def _do_checkin(base, token, check_only):
                     today_signed = True
                 elif st_body.get("data", {}).get("today_checked_in") is True:
                     today_signed = True
-                elif str(st_body.get("code")) == "10001":
+                elif (st_code == 200 or _signed_text(st_body)) and \
+                        str(st_body.get("code")) == "10001":
                     today_signed = True
 
             if check_only:
@@ -1302,10 +1317,12 @@ def _do_checkin(base, token, check_only):
                 code = str(ck_body.get("code", ""))
                 msg = ck_body.get("msg") or ck_body.get("message") or ""
                 data = ck_body.get("data") if isinstance(ck_body.get("data"), dict) else {}
-                # 已签/重复提示（幂等保护）
-                if code == "10001" or "已签到" in msg or "今天已签到" in msg:
+                # 已签/重复提示（幂等保护）：仅当响应确实表示「已签」才算，
+                # 避免把瞬时报错（code 10001 + msg「签到失败」+ HTTP 500）误判为已签
+                if (code == "10001" and 200 <= ck_code < 300) or _signed_text(ck_body):
                     result.update(status="ok", action="skip_already_signed",
-                                  msg="今日已签到（接口返回 code=10001）")
+                                  msg="今日已签到" + (("（接口返回 code=10001）")
+                                                    if code == "10001" else ""))
                     return result
                 # 领取成功判定：HTTP 2xx 且业务码为成功（兼容无 code / code=0 / code=200）
                 success_code = code in ("", "0", "200")
@@ -1325,14 +1342,11 @@ def _do_checkin(base, token, check_only):
                                       (("，连续第 %s 天" % streak) if streak else "") + bal_txt)
                     result["detail"]["streak_days"] = streak
                     return result
-                # 其余视为失败（含 2xx 但业务码异常、或非 2xx）
-                result.update(status="error", action="failed",
-                              msg=msg or ("HTTP %s（业务码 %s）" % (ck_code, code)))
-                return result
+                # 其余视为失败（含 2xx 但业务码异常、或非 2xx）：不直接返回，
+                # 交给外层重试循环（至多 MAX_RETRY 次），瞬时故障可自愈
+                last_err = msg or ("HTTP %s（业务码 %s）" % (ck_code, code))
             else:
-                result.update(status="error", action="failed",
-                              msg="领取接口返回非 JSON: %s" % ck_body.get("raw", "")[:200])
-                return result
+                last_err = "领取接口返回非 JSON: %s" % (str(ck_body)[:200])
 
         except urllib.error.HTTPError as e:
             last_err = "HTTP %s: %s" % (e.code, e.reason)
@@ -1341,9 +1355,12 @@ def _do_checkin(base, token, check_only):
         except Exception as e:
             last_err = "异常: %s" % e
 
-        # 重试前稍作等待
+        # 重试前退避等待（递增，避免网络抖动时连续快速重试全军覆没）
         if attempt <= MAX_RETRY:
-            time.sleep(2)
+            _idx = attempt - 1
+            if _idx >= len(_BACKOFF):
+                _idx = len(_BACKOFF) - 1
+            time.sleep(_BACKOFF[_idx])
 
     result.update(status="error", msg="重试 %d 次后仍失败: %s" % (MAX_RETRY, last_err))
     return result

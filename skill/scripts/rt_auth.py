@@ -393,6 +393,15 @@ def main():
         except (ValueError, IndexError):
             sys.stderr.write("[travel] --location 需为整数（1-4），已忽略\n")
 
+    # 报告文件：把本次结果（含日期）写出，供汇总推送脚本读取
+    report_file = None
+    if "--report-file" in argv:
+        try:
+            idx = argv.index("--report-file")
+            report_file = argv[idx + 1]
+        except (ValueError, IndexError):
+            sys.stderr.write("[report] --report-file 后需跟文件路径\n")
+
     if travel_only:
         do_checkin = False
         travel_mode = "auto" if travel_auto_flag else "readonly"
@@ -411,6 +420,17 @@ def main():
     except Exception as e:
         res = {"status": "error", "action": None, "points": None,
                "msg": "脚本未捕获异常: %s" % e, "detail": {"channel": "rt"}}
+
+    # 写出报告文件（无论成功失败，供汇总推送脚本读取；本通道不单独推送，由汇总脚本统一报）
+    if report_file:
+        try:
+            import datetime as _dt
+            _rep = dict(res)
+            _rep["date"] = _dt.date.today().isoformat()
+            with open(report_file, "w", encoding="utf-8") as _f:
+                json.dump(_rep, _f, ensure_ascii=False, indent=2)
+        except Exception as _e:
+            sys.stderr.write("[report] 写入报告文件失败：%s\n" % _e)
 
     if res.get("status") == "need_setup":
         print(json.dumps(res, ensure_ascii=False, indent=2))
